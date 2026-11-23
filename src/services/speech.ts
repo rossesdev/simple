@@ -40,19 +40,24 @@ const ERROR_MAP: Record<string, SpeechError> = {
   network: 'network',
 };
 
-// Errors that just mean "nothing heard yet": keep listening.
-const IGNORED_ERRORS = new Set(['no-speech', 'aborted']);
+// Errors that just mean "nothing heard yet": keep listening. On iOS 'aborted' is a real failure.
+const IGNORED_ERRORS = new Set(['no-speech']);
+const ANDROID_IGNORED_ERRORS = new Set(['no-speech', 'aborted']);
 
 // Browsers don't always fire onend after stop() (e.g. mid-restart on Android); end it ourselves.
 const STOP_TIMEOUT_MS = 1500;
 
 /**
- * Chrome Android stops after each pause and duplicates results in continuous mode, so each
+ * Chrome Android stops after each pause and duplicates results in continuous mode, so there each
  * session is one phrase (continuous = false) and a new session starts until the user taps stop.
+ * iOS Safari can't restart that fast ("audio-capture: Source is stopped"), so it gets one
+ * continuous session.
  */
 export function createWebSpeechService(
   RecognitionClass: RecognitionConstructor | undefined = getBrowserRecognition(),
+  isAndroid = typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent),
 ): SpeechService {
+  const ignoredErrors = isAndroid ? ANDROID_IGNORED_ERRORS : IGNORED_ERRORS;
   let recognition: Recognition | null = null;
   let isWanted = false;
   let finishCurrent: (() => void) | null = null;
@@ -81,7 +86,7 @@ export function createWebSpeechService(
       const current = new RecognitionClass();
       recognition = current;
       current.lang = 'es-CO';
-      current.continuous = false;
+      current.continuous = !isAndroid;
       current.interimResults = true;
 
       const fullText = (): string => [...finished, interim].filter(Boolean).join(' ').trim();
@@ -99,7 +104,7 @@ export function createWebSpeechService(
       };
 
       current.onerror = (event) => {
-        if (IGNORED_ERRORS.has(event.error)) return;
+        if (ignoredErrors.has(event.error)) return;
         failed = true;
         isWanted = false;
         handlers.onError(ERROR_MAP[event.error] ?? 'unknown');

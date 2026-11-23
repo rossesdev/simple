@@ -26,9 +26,12 @@ class FakeRecognition {
   }
 }
 
-function setup() {
+function setup(isAndroid = true) {
   FakeRecognition.instances = [];
-  const service = createWebSpeechService(FakeRecognition as unknown as RecognitionConstructor);
+  const service = createWebSpeechService(
+    FakeRecognition as unknown as RecognitionConstructor,
+    isAndroid,
+  );
   const handlers = { onTranscript: vi.fn(), onError: vi.fn(), onEnd: vi.fn() };
   service.start(handlers);
   const recognition = FakeRecognition.instances[0] as FakeRecognition;
@@ -94,6 +97,17 @@ describe('speech service', () => {
     };
     recognition.onend?.();
     expect(handlers.onEnd).toHaveBeenCalledWith('almuerzo');
+  });
+
+  it('uses one continuous session on iOS and stops when it aborts', () => {
+    const { handlers, recognition } = setup(false);
+    expect(recognition.continuous).toBe(true);
+    recognition.say('almuerzo', false);
+    recognition.onerror?.({ error: 'aborted' });
+    recognition.onend?.();
+    expect(handlers.onError).toHaveBeenCalledWith('unknown');
+    expect(handlers.onEnd).toHaveBeenCalledWith('almuerzo');
+    expect(recognition.starts).toBe(1);
   });
 
   it('reports unsupported browsers', () => {
