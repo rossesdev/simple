@@ -72,6 +72,30 @@ describe('speech service', () => {
     expect(recognition.starts).toBe(2);
   });
 
+  it('ends the recording on stop even if the browser never fires onend', () => {
+    vi.useFakeTimers();
+    const { service, handlers, recognition } = setup();
+    recognition.stop = (): void => {}; // browser ignores stop mid-restart
+    recognition.say('almuerzo', true);
+    service.stop();
+    expect(handlers.onEnd).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1500);
+    expect(handlers.onEnd).toHaveBeenCalledWith('almuerzo');
+    recognition.onend?.(); // late end is ignored
+    expect(handlers.onEnd).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+
+  it('ends the recording when the browser refuses to restart', () => {
+    const { handlers, recognition } = setup();
+    recognition.say('almuerzo', true);
+    recognition.start = (): void => {
+      throw new Error('InvalidStateError');
+    };
+    recognition.onend?.();
+    expect(handlers.onEnd).toHaveBeenCalledWith('almuerzo');
+  });
+
   it('reports unsupported browsers', () => {
     const service = createWebSpeechService(undefined);
     const onError = vi.fn();

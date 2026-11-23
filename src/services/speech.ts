@@ -43,6 +43,9 @@ const ERROR_MAP: Record<string, SpeechError> = {
 // Errors that just mean "nothing heard yet": keep listening.
 const IGNORED_ERRORS = new Set(['no-speech', 'aborted']);
 
+// Browsers don't always fire onend after stop() (e.g. mid-restart on Android); end it ourselves.
+const STOP_TIMEOUT_MS = 1500;
+
 /**
  * Chrome Android stops after each pause and duplicates results in continuous mode, so each
  * session is one phrase (continuous = false) and a new session starts until the user taps stop.
@@ -52,6 +55,8 @@ export function createWebSpeechService(
 ): SpeechService {
   let recognition: Recognition | null = null;
   let isWanted = false;
+  let finishCurrent: (() => void) | null = null;
+  let stopTimer: ReturnType<typeof setTimeout> | undefined;
 
   return {
     isSupported: () => RecognitionClass !== undefined,
@@ -66,9 +71,11 @@ export function createWebSpeechService(
         recognition.onresult = recognition.onerror = recognition.onend = null;
         recognition.stop();
       }
+      clearTimeout(stopTimer);
       const finished: string[] = [];
       let interim = '';
       let failed = false;
+      let isDone = false;
       isWanted = true;
 
       const current = new RecognitionClass();
@@ -98,24 +105,53 @@ export function createWebSpeechService(
         handlers.onError(ERROR_MAP[event.error] ?? 'unknown');
       };
 
-      current.onend = () => {
+      const finish = (): void => {
+        if (isDone) return;
+        isDone = true;
+        clearTimeout(stopTimer);
+        current.onresult = current.onerror = current.onend = null;
         // A phrase still marked interim when the session ended is kept as said.
         if (interim) finished.push(interim);
         interim = '';
-        if (isWanted && !failed && recognition === current) {
-          current.start();
-          return;
-        }
         if (recognition === current) recognition = null;
+        if (finishCurrent === finish) finishCurrent = null;
         handlers.onEnd(fullText());
       };
+      finishCurrent = finish;
 
-      current.start();
+      current.onend = () => {
+        if (isWanted && !failed && recognition === current) {
+          if (interim) finished.push(interim);
+          interim = '';
+          try {
+            current.start();
+            return;
+          } catch {
+            // Restart refused (InvalidStateError): end the recording instead of hanging.
+          }
+        }
+        finish();
+      };
+
+      try {
+        current.start();
+      } catch {
+        failed = true;
+        isWanted = false;
+        handlers.onError('unknown');
+        finish();
+      }
     },
 
     stop() {
       isWanted = false;
-      recognition?.stop();
+      try {
+        recognition?.stop();
+      } catch {
+        // Already stopped; the timeout below still ends the session.
+      }
+      const finishPending = finishCurrent;
+      if (finishPending) stopTimer = setTimeout(finishPending, STOP_TIMEOUT_MS);
     },
   };
 }
