@@ -6,13 +6,13 @@ import { FormField } from '../molecules/FormField';
 import { ModalLayout } from '../templates/ModalLayout';
 
 interface ApiKeyModalProps {
-  /** Resolves when Gemini accepts the key; rejects with a message to show otherwise. */
+  /** Resolves when Groq accepts the key; rejects with a message to show otherwise. */
   onSubmit: (apiKey: string) => Promise<void>;
 }
 
 const FORM_ID = 'api-key-form';
 
-/** Shown when Gemini rejects the stored key. It can't be closed until a working key is saved. */
+/** Shown when Groq rejects the stored key. It can't be closed until a working key is saved. */
 export function ApiKeyModal({ onSubmit }: ApiKeyModalProps): ReactElement {
   const [apiKey, setApiKey] = useState('');
   const [error, setError] = useState('');
@@ -45,19 +45,19 @@ export function ApiKeyModal({ onSubmit }: ApiKeyModalProps): ReactElement {
       }
     >
       <p className="text-label text-ink-muted">
-        Gemini la rechazó. Pega una key nueva de{' '}
+        Groq la rechazó. Pega una key nueva de{' '}
         <a
-          href="https://aistudio.google.com/apikey"
+          href="https://console.groq.com/keys"
           target="_blank"
           rel="noreferrer"
           className="text-accent underline"
         >
-          aistudio.google.com/apikey
+          console.groq.com/keys
         </a>
         .
       </p>
       <form id={FORM_ID} noValidate onSubmit={handleSubmit}>
-        <FormField label="API key de Gemini" error={error}>
+        <FormField label="API key de Groq" error={error}>
           <Input
             type="password"
             autoComplete="off"

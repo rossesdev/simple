@@ -17,6 +17,10 @@ export class AppDatabase extends Dexie {
       accounts: 'id',
       settings: 'key',
     });
+    // The app moved from Gemini to Groq: the old key is useless, don't keep it around.
+    this.version(2)
+      .stores({})
+      .upgrade((tx) => tx.table('settings').delete('geminiApiKey'));
 
     // Runs once, when the database is first created.
     this.on('populate', (tx) =>

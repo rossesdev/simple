@@ -3,12 +3,12 @@ import type { ReactElement } from 'react';
 
 interface MicButtonProps {
   isRecording: boolean;
-  /** Gemini is reading the recording: shows a spinner and blocks new recordings. */
+  /** Groq is reading the recording: shows a spinner and blocks new recordings. */
   isLoading?: boolean;
   onToggle: () => void;
 }
 
-// The Web Speech API gives no audio levels, so the waveform is a steady animation, not a meter.
+// No audio levels are read, so the waveform is a steady animation, not a meter.
 const WAVE_BARS = [
   { height: 14, delay: 0 },
   { height: 32, delay: 120 },

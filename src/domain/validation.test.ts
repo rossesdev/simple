@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { parseGeminiResponse, validateMovementInput } from './validation';
+import { parseModelResponse, validateMovementInput } from './validation';
 
 const now = new Date(2026, 10, 22, 12, 0);
 
@@ -97,7 +97,7 @@ describe('validateMovementInput', () => {
   });
 });
 
-describe('parseGeminiResponse', () => {
+describe('parseModelResponse', () => {
   it('turns the Foundations example into two valid drafts', () => {
     // "Me gasté 120 mil en una suscripción con Nequi y le aboné 20 mil a la deuda del apartamento desde ahorros"
     const json = {
@@ -122,7 +122,7 @@ describe('parseGeminiResponse', () => {
         },
       ],
     };
-    const drafts = parseGeminiResponse(json, now);
+    const drafts = parseModelResponse(json, now);
     expect(drafts).toHaveLength(2);
     expect(drafts?.[0]).toEqual({
       type: 'expense',
@@ -138,10 +138,10 @@ describe('parseGeminiResponse', () => {
   });
 
   it('returns null for a wrong shape or an invented date', () => {
-    expect(parseGeminiResponse({ movements: [] }, now)).toBeNull();
-    expect(parseGeminiResponse('not json', now)).toBeNull();
+    expect(parseModelResponse({ movements: [] }, now)).toBeNull();
+    expect(parseModelResponse('not json', now)).toBeNull();
     expect(
-      parseGeminiResponse(
+      parseModelResponse(
         {
           movements: [
             {

@@ -21,7 +21,7 @@ import type { MovementDraft } from '../../domain/validation';
 import { useMonthlyBalance } from '../../hooks/useMonthlyBalance';
 import { useMovements } from '../../hooks/useMovements';
 import { useRecorder } from '../../hooks/useRecorder';
-import { useVoiceEntry } from '../../hooks/useVoiceEntry';
+import { NOT_HEARD, useVoiceEntry } from '../../hooks/useVoiceEntry';
 
 interface HomePageProps {
   nav: ReactNode;
@@ -51,16 +51,17 @@ export function HomePage({ nav }: HomePageProps): ReactElement {
   const monthInputRef = useRef<HTMLInputElement>(null);
   const [notice, setNotice] = useState('');
   const voice = useVoiceEntry();
-  const recorder = useRecorder((transcript) => {
-    if (!transcript) {
-      setNotice('No te escuché. Intenta otra vez.');
+  const recorder = useRecorder((audio) => {
+    if (!audio) {
+      setNotice(NOT_HEARD);
       return;
     }
-    void voice.submitTranscript(transcript);
+    void voice.submitAudio(audio);
   });
   const voiceError = voice.state.step === 'error' ? voice.state.message : '';
+  const canRetry = voice.state.step === 'error' && voice.state.source !== undefined;
   const errorMessage = recorder.error || notice || voiceError;
-  const isParsing = voice.state.step === 'parsing';
+  const isParsing = voice.state.step === 'transcribing' || voice.state.step === 'parsing';
 
   const balanceMonth = month ?? monthOf(today());
   const totals = useMonthlyBalance(balanceMonth);
@@ -86,14 +87,12 @@ export function HomePage({ nav }: HomePageProps): ReactElement {
         />
       }
     >
-      {recorder.isRecording || voice.state.step === 'parsing' ? (
+      {recorder.isRecording || isParsing ? (
         <section className="flex flex-col gap-8" aria-live="polite">
           <h1 className="text-title font-medium">
             {recorder.isRecording ? 'Escuchando…' : 'Entendiendo…'}
           </h1>
-          {recorder.isRecording && recorder.transcript ? (
-            <p className="text-transcript">{recorder.transcript}</p>
-          ) : voice.state.step === 'parsing' ? (
+          {voice.state.step === 'parsing' ? (
             <p className="text-transcript text-ink-muted">{voice.state.transcript}</p>
           ) : (
             <p className="text-transcript text-ink-muted">
@@ -172,7 +171,7 @@ export function HomePage({ nav }: HomePageProps): ReactElement {
             >
               Escribir
             </Button>
-            {voiceError && (
+            {canRetry && (
               <Button variant="primary" onClick={() => void voice.retry()}>
                 Reintentar
               </Button>

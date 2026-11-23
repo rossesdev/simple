@@ -1,31 +1,30 @@
 import { useEffect, useRef, useState } from 'react';
 
-import { type SpeechError, type SpeechService, speechService } from '../services/speech';
+import { type AudioRecorder, audioRecorder, type RecorderError } from '../services/audioRecorder';
 
-const ERROR_MESSAGES: Record<SpeechError, string> = {
-  unsupported: 'Este navegador no reconoce voz. Usa Chrome.',
+const ERROR_MESSAGES: Record<RecorderError, string> = {
+  unsupported: 'Este navegador no puede grabar audio. Actualízalo o usa otro.',
   'not-allowed': 'Permite el micrófono para usar la voz.',
   'no-microphone': 'No se encontró el micrófono.',
-  network: 'Sin conexión. Intenta otra vez.',
-  unknown: 'No se pudo escuchar. Intenta otra vez.',
+  unknown: 'No se pudo grabar. Intenta otra vez.',
 };
 
 export interface Recorder {
   isRecording: boolean;
-  /** Live text while recording. */
-  transcript: string;
   error: string;
   toggle: () => void;
   clearError: () => void;
 }
 
-/** Tap to start, tap to stop. `onFinish` gets the final text when recording ends without error. */
+/**
+ * Tap to start, tap to stop. `onFinish` gets the audio when recording ends without error,
+ * or null when it was too short to hold a sentence.
+ */
 export function useRecorder(
-  onFinish: (transcript: string) => void,
-  service: SpeechService = speechService,
+  onFinish: (audio: Blob | null) => void,
+  recorder: AudioRecorder = audioRecorder,
 ): Recorder {
   const [isRecording, setIsRecording] = useState(false);
-  const [transcript, setTranscript] = useState('');
   const [error, setError] = useState('');
   const onFinishRef = useRef(onFinish);
 
@@ -33,30 +32,26 @@ export function useRecorder(
     onFinishRef.current = onFinish;
   }, [onFinish]);
 
-  useEffect(() => () => service.stop(), [service]);
+  useEffect(() => () => recorder.stop(), [recorder]);
 
   function toggle(): void {
     if (isRecording) {
-      service.stop();
+      recorder.stop();
       return;
     }
-    let hasError = false;
-    setTranscript('');
     setError('');
     setIsRecording(true);
-    service.start({
-      onTranscript: setTranscript,
-      onError: (speechError) => {
-        hasError = true;
-        setError(ERROR_MESSAGES[speechError]);
+    recorder.start({
+      onError: (recorderError) => {
+        setError(ERROR_MESSAGES[recorderError]);
         setIsRecording(false);
       },
-      onEnd: (finalText) => {
+      onEnd: (audio) => {
         setIsRecording(false);
-        if (!hasError) onFinishRef.current(finalText);
+        onFinishRef.current(audio);
       },
     });
   }
 
-  return { isRecording, transcript, error, toggle, clearError: () => setError('') };
+  return { isRecording, error, toggle, clearError: () => setError('') };
 }

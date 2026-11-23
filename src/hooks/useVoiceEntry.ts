@@ -3,35 +3,42 @@ import { useState } from 'react';
 import { movementRepository } from '../db/movementRepository';
 import { settingsRepository } from '../db/settingsRepository';
 import { checkDraft, type DraftWithErrors, type MovementInput } from '../domain/validation';
-import {
-  geminiParser,
-  ParserError,
-  type ParserErrorKind,
-  type ParserService,
-} from '../services/gemini';
+import { AiError, type AiErrorKind, type AiService, groqService } from '../services/groq';
+
+/** What a retry starts from: the audio if transcription failed, else the text. */
+export type VoiceSource = { audio: Blob } | { transcript: string };
 
 export type VoiceStep =
   | { step: 'idle' }
+  | { step: 'transcribing' }
   | { step: 'parsing'; transcript: string }
   | { step: 'confirm'; transcript: string; items: DraftWithErrors[] }
   | { step: 'editing'; transcript: string; items: DraftWithErrors[]; index: number }
-  | { step: 'error'; transcript: string; message: string }
-  | { step: 'invalid-key'; transcript: string };
+  /** No source: nothing worth retrying (e.g. silence). */
+  | { step: 'error'; message: string; source?: VoiceSource }
+  | { step: 'invalid-key'; source: VoiceSource };
 
-const ERROR_MESSAGES: Record<ParserErrorKind, string> = {
-  'invalid-key': 'Gemini rechazó la API key.',
-  quota: 'Llegaste al límite gratis de Gemini. Intenta más tarde.',
+const ERROR_MESSAGES: Record<AiErrorKind, string> = {
+  'invalid-key': 'Groq rechazó la API key.',
+  quota: 'Llegaste al límite gratis de Groq. Intenta más tarde.',
+  'too-large': 'La grabación es muy larga. Intenta con una frase más corta.',
   network: 'Sin conexión. Intenta otra vez.',
   'bad-response': 'No entendí la frase. Intenta otra vez o escríbelo.',
-  unknown: 'Gemini no respondió. Intenta otra vez.',
+  unknown: 'Groq no respondió. Intenta otra vez.',
 };
 
 const SAVE_ERROR = 'No se pudo guardar. Intenta otra vez.';
+export const NOT_HEARD = 'No te escuché. Intenta otra vez.';
+
+interface Failure {
+  source: VoiceSource;
+  error: unknown;
+}
 
 export interface VoiceEntry {
   state: VoiceStep;
-  /** Sends a finished transcript to Gemini. */
-  submitTranscript: (transcript: string) => Promise<void>;
+  /** Sends a finished recording to Groq: transcription, then parsing. */
+  submitAudio: (audio: Blob) => Promise<void>;
   retry: () => Promise<void>;
   /** "No, guardar": saves every movement as shown. */
   saveAll: () => Promise<void>;
@@ -39,36 +46,60 @@ export interface VoiceEntry {
   /** Form result for the movement being edited; saves everything once all are valid. */
   saveEdited: (input: MovementInput) => Promise<void>;
   backToConfirm: () => void;
-  /** Rejects with a message while Gemini refuses the new key. */
+  /** Rejects with a message while Groq refuses the new key. */
   submitApiKey: (apiKey: string) => Promise<void>;
   cancel: () => void;
 }
 
-/** Voice flow after recording: Gemini parsing → confirmation → optional edit → save. */
-export function useVoiceEntry(parser: ParserService = geminiParser): VoiceEntry {
+const isInvalidKey = (error: unknown): boolean =>
+  error instanceof AiError && error.kind === 'invalid-key';
+
+/** Voice flow after recording: transcription → parsing → confirmation → optional edit → save. */
+export function useVoiceEntry(ai: AiService = groqService): VoiceEntry {
   const [state, setState] = useState<VoiceStep>({ step: 'idle' });
 
-  function showError(transcript: string, error: unknown): void {
-    if (error instanceof ParserError && error.kind === 'invalid-key') {
-      setState({ step: 'invalid-key', transcript });
+  function showError({ source, error }: Failure): void {
+    if (isInvalidKey(error)) {
+      setState({ step: 'invalid-key', source });
       return;
     }
-    const message = error instanceof ParserError ? ERROR_MESSAGES[error.kind] : SAVE_ERROR;
-    setState({ step: 'error', transcript, message });
+    const message = error instanceof AiError ? ERROR_MESSAGES[error.kind] : SAVE_ERROR;
+    setState({ step: 'error', message, source });
   }
 
-  async function parseWith(transcript: string, apiKey: string): Promise<void> {
-    const drafts = await parser.parse(transcript, apiKey);
-    setState({ step: 'confirm', transcript, items: drafts.map((draft) => checkDraft(draft)) });
-  }
-
-  async function submitTranscript(transcript: string): Promise<void> {
-    setState({ step: 'parsing', transcript });
+  /**
+   * Runs the source through Groq up to the confirmation. Returns the failure, if any, with the
+   * step to retry from. `isQuiet` skips the progress steps (the key modal shows its own).
+   */
+  async function run(
+    source: VoiceSource,
+    apiKey: string,
+    isQuiet = false,
+  ): Promise<Failure | null> {
+    let current = source;
     try {
-      await parseWith(transcript, (await settingsRepository.getApiKey()) ?? '');
+      if ('audio' in current) {
+        if (!isQuiet) setState({ step: 'transcribing' });
+        const transcript = await ai.transcribe(current.audio, apiKey);
+        if (!transcript) {
+          setState({ step: 'error', message: NOT_HEARD });
+          return null;
+        }
+        current = { transcript };
+      }
+      const { transcript } = current;
+      if (!isQuiet) setState({ step: 'parsing', transcript });
+      const drafts = await ai.parse(transcript, apiKey);
+      setState({ step: 'confirm', transcript, items: drafts.map((draft) => checkDraft(draft)) });
+      return null;
     } catch (error) {
-      showError(transcript, error);
+      return { source: current, error };
     }
+  }
+
+  async function submit(source: VoiceSource): Promise<void> {
+    const failure = await run(source, (await settingsRepository.getApiKey()) ?? '');
+    if (failure) showError(failure);
   }
 
   async function save(transcript: string, items: readonly DraftWithErrors[]): Promise<void> {
@@ -79,16 +110,16 @@ export function useVoiceEntry(parser: ParserService = geminiParser): VoiceEntry 
       );
       setState({ step: 'idle' });
     } catch (error) {
-      showError(transcript, error);
+      showError({ source: { transcript }, error });
     }
   }
 
   return {
     state,
-    submitTranscript,
+    submitAudio: (audio) => submit({ audio }),
 
     async retry() {
-      if ('transcript' in state) await submitTranscript(state.transcript);
+      if (state.step === 'error' && state.source) await submit(state.source);
     },
 
     async saveAll() {
@@ -115,19 +146,15 @@ export function useVoiceEntry(parser: ParserService = geminiParser): VoiceEntry 
 
     async submitApiKey(apiKey) {
       if (state.step !== 'invalid-key') return;
-      const { transcript } = state;
-      try {
-        await parseWith(transcript, apiKey);
-      } catch (error) {
-        if (error instanceof ParserError && error.kind === 'invalid-key') {
-          throw new Error('Gemini rechazó esta key. Revisa que esté completa.', { cause: error });
-        }
-        // The key may be fine; the problem is elsewhere (quota, network).
-        await settingsRepository.setApiKey(apiKey);
-        showError(transcript, error);
-        return;
+      const failure = await run(state.source, apiKey, true);
+      if (failure && isInvalidKey(failure.error)) {
+        throw new Error('Groq rechazó esta key. Revisa que esté completa.', {
+          cause: failure.error,
+        });
       }
+      // The key works; any other failure (quota, network) is shown as usual.
       await settingsRepository.setApiKey(apiKey);
+      if (failure) showError(failure);
     },
 
     cancel() {

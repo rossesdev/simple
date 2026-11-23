@@ -13,7 +13,7 @@ const EMPTY_BALANCES = Object.fromEntries(ACCOUNT_IDS.map((id) => [id, ''])) as 
   string
 >;
 
-/** First run only: shown while there is no Gemini key on the phone. */
+/** First run only: shown while there is no Groq key on the phone. */
 export function SetupPage(): ReactElement {
   const [apiKey, setApiKey] = useState('');
   const [balances, setBalances] = useState(EMPTY_BALANCES);
@@ -43,20 +43,20 @@ export function SetupPage(): ReactElement {
         <header className="flex flex-col gap-2">
           <h1 className="text-title font-medium">Antes de empezar</h1>
           <p className="text-label text-ink-muted">
-            Pega tu API key de Gemini. Se guarda solo en este teléfono. La creas gratis en{' '}
+            Pega tu API key de Groq. Se guarda solo en este teléfono. La creas gratis en{' '}
             <a
-              href="https://aistudio.google.com/apikey"
+              href="https://console.groq.com/keys"
               target="_blank"
               rel="noreferrer"
               className="text-accent underline"
             >
-              aistudio.google.com/apikey
+              console.groq.com/keys
             </a>
             .
           </p>
         </header>
 
-        <FormField label="API key de Gemini" error={error}>
+        <FormField label="API key de Groq" error={error}>
           <Input
             type="password"
             autoComplete="off"

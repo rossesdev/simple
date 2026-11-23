@@ -5,13 +5,13 @@ import { type Category, isCategoryValidForType } from './categories';
 import { isAllowedNewDate, RELATIVE_DAYS, resolveRelativeDay } from './dateRule';
 import { MOVEMENT_TYPES, type Movement } from './types';
 
-/** The fields a person (form) or Gemini (parsed sentence) provides for one movement. */
+/** The fields a person (form) or the AI (parsed sentence) provides for one movement. */
 export type MovementInput = Pick<
   Movement,
   'type' | 'amount' | 'category' | 'accountId' | 'toAccountId' | 'description' | 'date'
 >;
 
-/** Unvalidated movement as it comes from Gemini or a form, shown for correction when invalid. */
+/** Unvalidated movement as it comes from the AI or a form, shown for correction when invalid. */
 export interface MovementDraft {
   type: Movement['type'];
   amount: number;
@@ -107,8 +107,8 @@ export function validateMovementInput(
   };
 }
 
-/** Shape of Gemini's JSON. Values are checked again per movement with validateMovementInput. */
-const geminiResponseSchema = z.object({
+/** Shape of the model's JSON. Values are checked again per movement with validateMovementInput. */
+const modelResponseSchema = z.object({
   movements: z
     .array(
       z.object({
@@ -125,9 +125,9 @@ const geminiResponseSchema = z.object({
     .max(10),
 });
 
-/** Parses Gemini's untrusted JSON into drafts. Returns null when the shape is wrong. */
-export function parseGeminiResponse(json: unknown, now: Date = new Date()): MovementDraft[] | null {
-  const result = geminiResponseSchema.safeParse(json);
+/** Parses the model's untrusted JSON into drafts. Returns null when the shape is wrong. */
+export function parseModelResponse(json: unknown, now: Date = new Date()): MovementDraft[] | null {
+  const result = modelResponseSchema.safeParse(json);
   if (!result.success) return null;
   return result.data.movements.map(({ toAccountId, date, ...movement }) => ({
     ...movement,
