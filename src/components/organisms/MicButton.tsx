@@ -1,8 +1,10 @@
-import { IconMicrophone, IconPlayerStopFilled } from '@tabler/icons-react';
+import { IconLoader2, IconMicrophone, IconPlayerStopFilled } from '@tabler/icons-react';
 import type { ReactElement } from 'react';
 
 interface MicButtonProps {
   isRecording: boolean;
+  /** Gemini is reading the recording: shows a spinner and blocks new recordings. */
+  isLoading?: boolean;
   onToggle: () => void;
 }
 
@@ -17,7 +19,11 @@ const WAVE_BARS = [
 ];
 
 /** Tap to start, tap to stop. Recording logic lives in useRecorder; this only shows state. */
-export function MicButton({ isRecording, onToggle }: MicButtonProps): ReactElement {
+export function MicButton({
+  isRecording,
+  isLoading = false,
+  onToggle,
+}: MicButtonProps): ReactElement {
   return (
     <div className="flex flex-col items-center gap-4">
       {isRecording && (
@@ -34,15 +40,25 @@ export function MicButton({ isRecording, onToggle }: MicButtonProps): ReactEleme
       <button
         type="button"
         onClick={onToggle}
-        aria-label={isRecording ? 'Terminar grabación' : 'Grabar movimiento'}
+        disabled={isLoading}
+        aria-busy={isLoading}
+        aria-label={
+          isLoading ? 'Entendiendo' : isRecording ? 'Terminar grabación' : 'Grabar movimiento'
+        }
         className={`flex size-mic items-center justify-center rounded-lg bg-accent text-on-accent transition-transform active:scale-[0.98] ${
           isRecording ? 'ring-[12px] ring-surface-1' : ''
         }`}
       >
-        {isRecording ? <IconPlayerStopFilled size={28} /> : <IconMicrophone size={30} stroke={2} />}
+        {isLoading ? (
+          <IconLoader2 size={30} stroke={2} className="animate-spin" />
+        ) : isRecording ? (
+          <IconPlayerStopFilled size={28} />
+        ) : (
+          <IconMicrophone size={30} stroke={2} />
+        )}
       </button>
       <span className="text-label text-ink-muted">
-        {isRecording ? 'Toca para terminar' : 'Toca para hablar'}
+        {isLoading ? 'Entendiendo…' : isRecording ? 'Toca para terminar' : 'Toca para hablar'}
       </span>
     </div>
   );

@@ -76,6 +76,7 @@ export function HomePage({ nav }: HomePageProps): ReactElement {
       action={
         <MicButton
           isRecording={recorder.isRecording}
+          isLoading={isParsing}
           onToggle={() => {
             if (isParsing) return;
             setNotice('');

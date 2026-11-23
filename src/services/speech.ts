@@ -13,6 +13,7 @@ interface Recognition {
   onend: (() => void) | null;
   start(): void;
   stop(): void;
+  abort(): void;
 }
 
 export type RecognitionConstructor = new () => Recognition;
@@ -115,6 +116,12 @@ export function createWebSpeechService(
         isDone = true;
         clearTimeout(stopTimer);
         current.onresult = current.onerror = current.onend = null;
+        // iOS may never end after stop(); abort releases the mic so the next recording can use it.
+        try {
+          current.abort();
+        } catch {
+          // Already ended.
+        }
         // A phrase still marked interim when the session ended is kept as said.
         if (interim) finished.push(interim);
         interim = '';

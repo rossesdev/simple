@@ -16,6 +16,10 @@ class FakeRecognition {
     this.starts++;
   };
   stop = (): void => this.onend?.();
+  aborts = 0;
+  abort = (): void => {
+    this.aborts++;
+  };
 
   constructor() {
     FakeRecognition.instances.push(this);
@@ -84,6 +88,7 @@ describe('speech service', () => {
     expect(handlers.onEnd).not.toHaveBeenCalled();
     vi.advanceTimersByTime(1500);
     expect(handlers.onEnd).toHaveBeenCalledWith('almuerzo');
+    expect(recognition.aborts).toBe(1); // frees the mic for the next recording
     recognition.onend?.(); // late end is ignored
     expect(handlers.onEnd).toHaveBeenCalledTimes(1);
     vi.useRealTimers();
